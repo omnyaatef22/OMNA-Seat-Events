@@ -1,0 +1,1556 @@
+{
+  "name": "Seat 1 · Registration & Check-in",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Register for the workshop",
+        "formDescription": "Pay the ticket with InstaPay first, then upload the screenshot here.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Full name",
+              "fieldName": "name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Email",
+              "fieldType": "email",
+              "fieldName": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Mobile",
+              "fieldName": "phone",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Event",
+              "fieldType": "dropdown",
+              "fieldName": "event",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "E-01 · n8n Automation Workshop"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "InstaPay reference number",
+              "fieldName": "payment_ref",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Payment screenshot",
+              "fieldType": "file",
+              "fieldName": "screenshot",
+              "multipleFiles": false,
+              "acceptFileTypes": ".jpg,.jpeg,.png",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "n375",
+      "name": "Registration Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $json; const g = (k, l) => String(j[k] ?? j[l] ?? '').trim(); const file = Object.values($input.first().binary || {})[0];\nconst a = { name: g('name', 'Full name'), email: g('email', 'Email').toLowerCase(), phone: g('phone', 'Mobile').replace(/[^0-9+]/g, '').replace(/^(\\+20|0020|20)(?=1)/, '0'),\n  event_id: (g('event', 'Event').match(/E-\\d{2}/) || [''])[0], payment_ref: g('payment_ref', 'InstaPay reference number').replace(/\\s/g, '') };\nconst p = [];\nif (a.name.split(/\\s+/).length < 2) p.push('write your full name as it should appear on the certificate');\nif (!/^[^\\s@]+@[^\\s@]+\\.[a-z]{2,}$/.test(a.email)) p.push('email looks invalid');\nif (!/^01[0125]\\d{8}$/.test(a.phone)) p.push('mobile must be an Egyptian number');\nif (!/^[A-Za-z0-9]{6,20}$/.test(a.payment_ref)) p.push('InstaPay reference should be 6–20 letters or digits');\nif (!file || !/image\\//.test(file.mimeType || '')) p.push('upload the payment screenshot as an image');\nconst b64 = file && !p.length ? (await this.helpers.getBinaryDataBuffer(0, Object.keys($input.first().binary)[0])).toString('base64') : '';\nreturn [{ json: { ...a, b64, mime: file?.mimeType || '', problems: p, ok: !p.length } }];"
+      },
+      "id": "n376",
+      "name": "Validate Registration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c377",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "n378",
+      "name": "Form OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 701,
+          "mode": "id",
+          "cachedResultName": "Events"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "event_id",
+              "lookupValue": "={{ $json.event_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n379",
+      "name": "Read Event",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        -96
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "event_id",
+              "lookupValue": "={{ $('Validate Registration').item.json.event_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n380",
+      "name": "Read Event Registrations",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        880,
+        -96
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// One seat per person, event must be open and in the future, reference numbers can be used once.\nconst a = $('Validate Registration').first().json; const e = $('Read Event').first().json;\nconst regs = $input.all().map(i => i.json).filter(r => r.reg_id && r.status !== 'cancelled');\nconst p = [];\nif (!e.event_id || e.status !== 'open') p.push('registration for this event is closed');\nif (DateTime.fromFormat(String(e.starts_at), 'yyyy-MM-dd HH:mm', { zone: 'Africa/Cairo' }) < $now) p.push('this event already started');\nif (regs.some(r => r.email === a.email || r.phone === a.phone)) p.push('you are already registered (same email or mobile)');\nif (regs.some(r => String(r.payment_ref).toUpperCase() === a.payment_ref.toUpperCase())) p.push('this InstaPay reference was already used');\nconst confirmed = regs.filter(r => r.status === 'confirmed').length;\nconst waitlist = regs.filter(r => r.status === 'waitlist').length;\nreturn [{ json: { ...a, event: e, problems: p, ok: !p.length, full: confirmed >= Number(e.capacity), waitlist_position: waitlist + 1, b64: a.b64,\n  mime: a.mime,\n  prompt: 'This is a screenshot of an Egyptian InstaPay or bank transfer. Return JSON only: {\"is_payment_receipt\": true|false, \"amount\": number, \"currency\": \"EGP\", \"reference\": \"\", \"recipient\": \"\", \"date\": \"YYYY-MM-DD\", \"status\": \"successful|failed|pending|unknown\"}. Use \"\" or 0 when not visible.' } }];"
+      },
+      "id": "n381",
+      "name": "Check Event Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c382",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "n383",
+      "name": "Event Rules OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1328,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.prompt }].concat($json.b64 ? [{ inline_data: { mime_type: $json.mime, data: $json.b64 } }] : []) }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "n384",
+      "name": "AI Read Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1552,
+        -208
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// The screenshot must prove: successful transfer, the exact ticket price, to our handle, recent, with the reference the person typed.\nconst a = $('Check Event Rules').first().json; const e = a.event;\nlet s; try { s = JSON.parse(($json.candidates?.[0]?.content?.parts || []).map(p => p.text).join('')); } catch (x) { s = null; }\nconst p = [];\nif (!s || !s.is_payment_receipt) p.push('screenshot is not a payment receipt');\nelse {\n  if (s.status !== 'successful') p.push('transfer status is ' + s.status);\n  if (Math.abs(Number(s.amount) - Number(e.price_egp)) > 0.5) p.push('amount ' + s.amount + ' ≠ ticket price ' + e.price_egp);\n  if (s.recipient && !String(s.recipient).toLowerCase().includes(String(e.instapay_handle).split('@')[0].toLowerCase())) p.push('sent to ' + s.recipient + ', not ' + e.instapay_handle);\n  if (s.reference && String(s.reference).replace(/\\s/g, '').toUpperCase() !== a.payment_ref.toUpperCase()) p.push('reference on the screenshot (' + s.reference + ') differs from the one typed');\n  const d = DateTime.fromISO(String(s.date || ''), { zone: 'Africa/Cairo' }); if (!d.isValid || $now.diff(d, 'days').days > 3) p.push('payment date missing or older than 3 days');\n}\nconst token = 'SEAT-' + Array.from({ length: 4 }, () => Math.random().toString(36).slice(2, 6).toUpperCase()).join('');\nreturn [{ json: { ...a, b64: undefined, prompt: undefined, paid_amount: s?.amount || '', payment_problems: p, payment_ok: !p.length, qr_token: token,\n  reg_id: 'G-' + $now.setZone('Africa/Cairo').toFormat('yyMMdd') + '-' + Math.random().toString(36).slice(2, 6).toUpperCase(),\n  status: p.length ? 'payment_review' : a.full ? 'waitlist' : 'confirmed' } }];"
+      },
+      "id": "n385",
+      "name": "Check Payment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a386",
+              "name": "name",
+              "value": "={{ $('Check Event Rules').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "a387",
+              "name": "email",
+              "value": "={{ $('Check Event Rules').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "a388",
+              "name": "phone",
+              "value": "={{ $('Check Event Rules').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "a389",
+              "name": "event_id",
+              "value": "={{ $('Check Event Rules').item.json.event_id }}",
+              "type": "string"
+            },
+            {
+              "id": "a390",
+              "name": "payment_ref",
+              "value": "={{ $('Check Event Rules').item.json.payment_ref }}",
+              "type": "string"
+            },
+            {
+              "id": "a391",
+              "name": "reg_id",
+              "value": "={{ 'G-' + $now.setZone('Africa/Cairo').toFormat('yyMMdd') + '-' + Math.random().toString(36).slice(2, 6).toUpperCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "a392",
+              "name": "qr_token",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a393",
+              "name": "paid_amount",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a394",
+              "name": "status",
+              "value": "payment_review",
+              "type": "string"
+            },
+            {
+              "id": "a395",
+              "name": "payment_problems",
+              "value": "={{ ['screenshot could not be read automatically'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n396",
+      "name": "AI Down: Manual Check",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "reg_id": "={{ $json.reg_id }}",
+            "created_at": "={{ $now.setZone('Africa/Cairo').toFormat('yyyy-MM-dd HH:mm') }}",
+            "event_id": "={{ $json.event_id }}",
+            "name": "={{ $json.name }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "payment_amount": "={{ $json.paid_amount }}",
+            "payment_ref": "={{ $json.payment_ref }}",
+            "status": "={{ $json.status }}",
+            "qr_token": "={{ $json.status === 'payment_review' ? '' : $json.qr_token }}",
+            "waitlist_position": "={{ $json.status === 'waitlist' ? $json.waitlist_position : '' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "reg_id",
+              "displayName": "reg_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "event_id",
+              "displayName": "event_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "payment_amount",
+              "displayName": "payment_amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "payment_ref",
+              "displayName": "payment_ref",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "qr_token",
+              "displayName": "qr_token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "waitlist_position",
+              "displayName": "waitlist_position",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "useAppend": true
+        }
+      },
+      "id": "n397",
+      "name": "Save Registration",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1984,
+        -208
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c398",
+                    "leftValue": "={{ $('Save Registration').item.json.status }}",
+                    "rightValue": "confirmed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "confirmed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c399",
+                    "leftValue": "={{ $('Save Registration').item.json.status }}",
+                    "rightValue": "waitlist",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "waitlist"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c400",
+                    "leftValue": "={{ $('Save Registration').item.json.status }}",
+                    "rightValue": "payment_review",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "payment_review"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "n401",
+      "name": "Route Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2208,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Check Payment').item.json.email }}",
+        "subject": "={{ 'Your ticket · ' + $('Check Payment').item.json.event.title }}",
+        "message": "={{ '<p>Hi ' + $('Check Payment').item.json.name + ', payment received ✅</p><p><b>' + $('Check Payment').item.json.event.title + '</b><br>' + $('Check Payment').item.json.event.starts_at + ' · ' + $('Check Payment').item.json.event.venue + '</p><p>Show this QR code at the door:</p>' + '<img alt=\"QR ticket\" width=\"220\" src=\"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent($('Check Payment').item.json.qr_token) + '\">' + '<p>Ticket ' + $('Check Payment').item.json.reg_id + '</p>' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "n402",
+      "name": "Email: Ticket",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2432,
+        -320
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "You're in 🎉",
+        "completionMessage": "={{ 'Your ticket and QR code were emailed to ' + $('Check Payment').item.json.email + '.' }}",
+        "options": {}
+      },
+      "id": "n403",
+      "name": "You're In Page",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        2640,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Check Payment').item.json.email }}",
+        "subject": "={{ 'Waitlist · ' + $('Check Payment').item.json.event.title }}",
+        "message": "={{ '<p>Hi ' + $('Check Payment').item.json.name + ', the event is full. Your payment is recorded and you are number <b>' + $('Check Payment').item.json.waitlist_position + '</b> on the waitlist. If no seat opens, the organizer refunds you.</p>' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "n404",
+      "name": "Email: Waitlist",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2432,
+        -176
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "You are on the waitlist",
+        "completionMessage": "={{ 'Position ' + $('Check Payment').item.json.waitlist_position + '. We email you the moment a seat opens.' }}",
+        "options": {}
+      },
+      "id": "n405",
+      "name": "Waitlist Page",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        2640,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 703,
+          "mode": "id",
+          "cachedResultName": "Review"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "time": "={{ $now.setZone('Africa/Cairo').toFormat('yyyy-MM-dd HH:mm') }}",
+            "source": "registration form",
+            "raw": "={{ $('Save Registration').item.json.reg_id + ' · ' + $('Save Registration').item.json.email + ' · ref ' + $('Save Registration').item.json.payment_ref }}",
+            "problems": "={{ [].concat(($('Check Payment').isExecuted ? $('Check Payment') : $('AI Down: Manual Check')).item.json.payment_problems || []).join('; ') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "raw",
+              "displayName": "raw",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "problems",
+              "displayName": "problems",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "useAppend": true
+        }
+      },
+      "id": "n406",
+      "name": "Send to Review",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2432,
+        -48
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_CHAT_ID",
+        "text": "={{ '💳 Payment needs a manual check: ' + $('Save Registration').item.json.reg_id + ' · ' + $('Save Registration').item.json.name + ' · ref ' + $('Save Registration').item.json.payment_ref + '\\n' + [].concat(($('Check Payment').isExecuted ? $('Check Payment') : $('AI Down: Manual Check')).item.json.payment_problems || []).join('\\n') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "n407",
+      "name": "Tell Organizer",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2640,
+        -48
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "We are checking your payment",
+        "completionMessage": "Your registration is saved. The organizer will confirm by email within 24 hours.",
+        "options": {}
+      },
+      "id": "n408",
+      "name": "Checking Payment Page",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        2864,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Registration not completed",
+        "completionMessage": "={{ 'Please fix: ' + $json.problems.join(' · ') }}",
+        "options": {}
+      },
+      "id": "n409",
+      "name": "Fix Form Page",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        1552,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "n410",
+      "name": "Door Bot",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Door staff scan the QR with any QR app and paste the text (or send /checkin TOKEN).\nconst t = String($json.message?.text || '').toUpperCase().match(/SEAT-[A-Z0-9]{16}/);\nreturn [{ json: { token: t ? t[0] : '', chat_id: $json.message.chat.id, staff: $json.message.from.first_name } }];"
+      },
+      "id": "n411",
+      "name": "Read Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "qr_token",
+              "lookupValue": "={{ $json.token || '__none__' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n412",
+      "name": "Find Ticket",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        448,
+        368
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valid only if confirmed, not used before, and the event is today.\nconst r = $input.first().json; const t = $('Read Token').first().json;\nlet msg, ok = false;\nif (!t.token) msg = '❌ No ticket code found in that message.';\nelse if (!r.reg_id) msg = '❌ Unknown ticket.';\nelse if (r.status !== 'confirmed') msg = '❌ Ticket status is ' + r.status + '.';\nelse if (r.checked_in_at) msg = '⚠️ Already checked in at ' + r.checked_in_at + ' (' + r.name + ').';\nelse { ok = true; msg = '✅ Welcome ' + r.name + ' (' + r.reg_id + ')'; }\nreturn [{ json: { ok, msg, reg_id: r.reg_id, chat_id: t.chat_id } }];"
+      },
+      "id": "n413",
+      "name": "Check Ticket",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c414",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "n415",
+      "name": "Valid Ticket?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "reg_id": "={{ $json.reg_id }}",
+            "checked_in_at": "={{ $now.setZone('Africa/Cairo').toFormat('yyyy-MM-dd HH:mm') }}"
+          },
+          "matchingColumns": [
+            "reg_id"
+          ],
+          "schema": [
+            {
+              "id": "reg_id",
+              "displayName": "reg_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "checked_in_at",
+              "displayName": "checked_in_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "n416",
+      "name": "Record Check-in",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1104,
+        288
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Check Ticket').item.json.chat_id }}",
+        "text": "={{ $('Check Ticket').item.json.msg }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "n417",
+      "name": "Reply to Door",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1328,
+        368
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "formTitle": "Cancel my registration",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Ticket ID",
+              "fieldName": "reg_id",
+              "placeholder": "G-261030-AB12",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Email used to register",
+              "fieldType": "email",
+              "fieldName": "email",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "n418",
+      "name": "Cancel Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "reg_id",
+              "lookupValue": "={{ String($json.reg_id || $json['Ticket ID']).trim().toUpperCase() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n419",
+      "name": "Find Registration",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        752
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c420",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "={{ String($('Cancel Form').item.json.email || $('Cancel Form').item.json['Email used to register']).trim().toLowerCase() }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c421",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "confirmed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "n422",
+      "name": "Can Cancel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "reg_id": "={{ $json.reg_id }}",
+            "status": "cancelled"
+          },
+          "matchingColumns": [
+            "reg_id"
+          ],
+          "schema": [
+            {
+              "id": "reg_id",
+              "displayName": "reg_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "n423",
+      "name": "Mark Cancelled",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        672
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Registration cancelled",
+        "completionMessage": "Your seat goes to the next person on the waitlist. The organizer will contact you about the refund.",
+        "options": {}
+      },
+      "id": "n424",
+      "name": "Cancelled Page",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Could not cancel",
+        "completionMessage": "Ticket ID and email do not match a confirmed registration.",
+        "options": {}
+      },
+      "id": "n425",
+      "name": "Cannot Cancel Page",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        672,
+        832
+      ]
+    }
+  ],
+  "connections": {
+    "Registration Form": {
+      "main": [
+        [
+          {
+            "node": "Validate Registration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Registration": {
+      "main": [
+        [
+          {
+            "node": "Form OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Form OK?": {
+      "main": [
+        [
+          {
+            "node": "Read Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fix Form Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Event": {
+      "main": [
+        [
+          {
+            "node": "Read Event Registrations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Event Registrations": {
+      "main": [
+        [
+          {
+            "node": "Check Event Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Event Rules": {
+      "main": [
+        [
+          {
+            "node": "Event Rules OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Event Rules OK?": {
+      "main": [
+        [
+          {
+            "node": "AI Read Payment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fix Form Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Read Payment": {
+      "main": [
+        [
+          {
+            "node": "Check Payment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Down: Manual Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Payment": {
+      "main": [
+        [
+          {
+            "node": "Save Registration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Registration": {
+      "main": [
+        [
+          {
+            "node": "Route Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Status": {
+      "main": [
+        [
+          {
+            "node": "Email: Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email: Waitlist",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email: Ticket": {
+      "main": [
+        [
+          {
+            "node": "You're In Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Down: Manual Check": {
+      "main": [
+        [
+          {
+            "node": "Save Registration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email: Waitlist": {
+      "main": [
+        [
+          {
+            "node": "Waitlist Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Review": {
+      "main": [
+        [
+          {
+            "node": "Tell Organizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tell Organizer": {
+      "main": [
+        [
+          {
+            "node": "Checking Payment Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Door Bot": {
+      "main": [
+        [
+          {
+            "node": "Read Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Token": {
+      "main": [
+        [
+          {
+            "node": "Find Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Ticket": {
+      "main": [
+        [
+          {
+            "node": "Check Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Ticket": {
+      "main": [
+        [
+          {
+            "node": "Valid Ticket?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Ticket?": {
+      "main": [
+        [
+          {
+            "node": "Record Check-in",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply to Door",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Check-in": {
+      "main": [
+        [
+          {
+            "node": "Reply to Door",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Form": {
+      "main": [
+        [
+          {
+            "node": "Find Registration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Registration": {
+      "main": [
+        [
+          {
+            "node": "Can Cancel?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Cancel?": {
+      "main": [
+        [
+          {
+            "node": "Mark Cancelled",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cannot Cancel Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Cancelled": {
+      "main": [
+        [
+          {
+            "node": "Cancelled Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Cairo"
+  }
+}

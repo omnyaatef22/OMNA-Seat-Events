@@ -1,0 +1,837 @@
+{
+  "name": "Seat 2 · Reminders, Waitlist & Errors",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "n354",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turn any failure into one row: which workflow, which node, what kind of error.\nconst e = $json.execution || {}; const wf = $json.workflow || {};\nconst msg = String(e.error?.message || $json.trigger?.error?.message || 'Unknown error').slice(0, 500);\nconst rules = [[/401|403|unauthori[sz]ed|invalid.*(token|credentials)|expired/i,'auth','critical'],[/429|rate limit|too many requests|quota/i,'rate_limit','warning'],\n [/ETIMEDOUT|ECONNRESET|ENOTFOUND|timeout|socket hang up|aborted/i,'network','warning'],[/VALIDATION:/,'validation','info'],\n [/AI_OUTPUT:|JSON|Unexpected token/i,'ai_output','warning'],[/PUT_[A-Z_]+|chat not found|not configured/i,'config','critical']];\nconst [, type, severity] = rules.find(([re]) => re.test(msg)) || [null, 'unknown', 'warning'];\nreturn [{ json: { time: $now.setZone('Africa/Cairo').toFormat('yyyy-MM-dd HH:mm'), workflow: wf.name || '', node: e.lastNodeExecuted || '',\n  type, severity, message: msg, execution_url: e.url || '',\n  text: (severity === 'critical' ? '🚨' : '⚠️') + ' ' + (wf.name || 'Workflow') + ' · ' + type + '\\nNode: ' + (e.lastNodeExecuted || '?') + '\\n' + msg + '\\n' + (e.url || '') } }];"
+      },
+      "id": "n355",
+      "name": "Classify Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 704,
+          "mode": "id",
+          "cachedResultName": "Errors"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "time": "={{ $json.time }}",
+            "workflow": "={{ $json.workflow }}",
+            "node": "={{ $json.node }}",
+            "type": "={{ $json.type }}",
+            "message": "={{ $json.message }}",
+            "execution_url": "={{ $json.execution_url }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "workflow",
+              "displayName": "workflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "node",
+              "displayName": "node",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "type",
+              "displayName": "type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "execution_url",
+              "displayName": "execution_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "useAppend": true
+        }
+      },
+      "id": "n356",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        440,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_CHAT_ID",
+        "text": "={{ $('Classify Error').item.json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "n357",
+      "name": "Alert Team",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c358",
+              "leftValue": "={{ $('Classify Error').item.json.severity }}",
+              "rightValue": "critical",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "n359",
+      "name": "Critical?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "YOUR_SEND_TO",
+        "subject": "={{ 'CRITICAL: ' + $('Classify Error').item.json.workflow + ' · ' + $('Classify Error').item.json.type }}",
+        "emailType": "text",
+        "message": "={{ $('Classify Error').item.json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "n360",
+      "name": "Email Critical Error",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "n361",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 701,
+          "mode": "id",
+          "cachedResultName": "Events"
+        },
+        "options": {}
+      },
+      "id": "n362",
+      "name": "Read Events",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        220,
+        300
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "options": {}
+      },
+      "id": "n363",
+      "name": "Read Registrations",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        440,
+        300
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reminders 1 day and 1 hour before, and promotion from the waitlist when a confirmed seat was cancelled.\nconst now = $now.setZone('Africa/Cairo'); const P = s => DateTime.fromFormat(String(s || ''), 'yyyy-MM-dd HH:mm', { zone: 'Africa/Cairo' });\nconst events = Object.fromEntries($('Read Events').all().map(i => [i.json.event_id, i.json]));\nconst regs = $input.all().map(i => i.json).filter(r => r.reg_id);\nconst out = [];\nfor (const r of regs.filter(r => r.status === 'confirmed')) {\n  const e = events[r.event_id]; if (!e) continue; const h = P(e.starts_at).diff(now, 'hours').hours;\n  if (h > 0 && h <= 24 && !r.reminder_1d) out.push({ json: { action: 'remind_1d', r, e } });\n  else if (h > 0 && h <= 1.25 && !r.reminder_1h) out.push({ json: { action: 'remind_1h', r, e } });\n}\nfor (const e of Object.values(events)) {\n  if (e.status !== 'open' || P(e.starts_at) < now) continue;\n  const free = Number(e.capacity) - regs.filter(r => r.event_id === e.event_id && r.status === 'confirmed').length;\n  regs.filter(r => r.event_id === e.event_id && r.status === 'waitlist').sort((a, b) => Number(a.waitlist_position) - Number(b.waitlist_position))\n    .slice(0, Math.max(0, free)).forEach(r => out.push({ json: { action: 'promote', r, e } }));\n}\nreturn out;"
+      },
+      "id": "n364",
+      "name": "Plan Actions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c365",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "remind_1d",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "remind_1d"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c366",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "remind_1h",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "remind_1h"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c367",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "promote",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "promote"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "n368",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.r.email }}",
+        "subject": "={{ 'Reminder: ' + $json.e.title + ' tomorrow' }}",
+        "emailType": "html",
+        "message": "={{ '<p>Hi ' + $json.r.name + ',</p><p>See you at <b>' + $json.e.title + '</b> on ' + $json.e.starts_at + ' at ' + $json.e.venue + '. Show this QR code at the door:</p>' + '<img alt=\"QR ticket\" width=\"220\" src=\"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent($json.r.qr_token) + '\">' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "n369",
+      "name": "Email: Tomorrow",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        160
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.r.email }}",
+        "subject": "={{ $json.e.title + ' starts in 1 hour' }}",
+        "emailType": "html",
+        "message": "={{ '<p>Hi ' + $json.r.name + ', we start at ' + $json.e.starts_at.slice(11) + ' at ' + $json.e.venue + '. Your QR code:</p>' + '<img alt=\"QR ticket\" width=\"220\" src=\"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent($json.r.qr_token) + '\">' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "n370",
+      "name": "Email: In One Hour",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "reg_id": "={{ $('Route Action').item.json.r.reg_id }}",
+            "reminder_1d": "={{ $now.setZone('Africa/Cairo').toFormat('yyyy-MM-dd HH:mm') }}"
+          },
+          "matchingColumns": [
+            "reg_id"
+          ],
+          "schema": [
+            {
+              "id": "reg_id",
+              "displayName": "reg_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reminder_1d",
+              "displayName": "reminder_1d",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "n371",
+      "name": "Mark 1-Day Reminder",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1320,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "reg_id": "={{ $('Route Action').item.json.r.reg_id }}",
+            "reminder_1h": "={{ $now.setZone('Africa/Cairo').toFormat('yyyy-MM-dd HH:mm') }}"
+          },
+          "matchingColumns": [
+            "reg_id"
+          ],
+          "schema": [
+            {
+              "id": "reg_id",
+              "displayName": "reg_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reminder_1h",
+              "displayName": "reminder_1h",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "n372",
+      "name": "Mark 1-Hour Reminder",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1320,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 702,
+          "mode": "id",
+          "cachedResultName": "Registrations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "reg_id": "={{ $json.r.reg_id }}",
+            "status": "confirmed",
+            "waitlist_position": ""
+          },
+          "matchingColumns": [
+            "reg_id"
+          ],
+          "schema": [
+            {
+              "id": "reg_id",
+              "displayName": "reg_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "waitlist_position",
+              "displayName": "waitlist_position",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "n373",
+      "name": "Promote from Waitlist",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1100,
+        460
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Route Action').item.json.r.email }}",
+        "subject": "={{ 'Good news: you have a seat at ' + $('Route Action').item.json.e.title }}",
+        "emailType": "html",
+        "message": "={{ '<p>Hi ' + $('Route Action').item.json.r.name + ',</p><p>A seat opened and it is yours. Your ticket:</p>' + '<img alt=\"QR ticket\" width=\"220\" src=\"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent($('Route Action').item.json.r.qr_token) + '\">' + '<p>' + $('Route Action').item.json.e.starts_at + ' · ' + $('Route Action').item.json.e.venue + '</p>' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "n374",
+      "name": "Email: Seat Opened",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        460
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Classify Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error": {
+      "main": [
+        [
+          {
+            "node": "Alert Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Team": {
+      "main": [
+        [
+          {
+            "node": "Critical?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Critical?": {
+      "main": [
+        [
+          {
+            "node": "Email Critical Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Read Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Events": {
+      "main": [
+        [
+          {
+            "node": "Read Registrations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Registrations": {
+      "main": [
+        [
+          {
+            "node": "Plan Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Actions": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Email: Tomorrow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email: In One Hour",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Promote from Waitlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email: Tomorrow": {
+      "main": [
+        [
+          {
+            "node": "Mark 1-Day Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email: In One Hour": {
+      "main": [
+        [
+          {
+            "node": "Mark 1-Hour Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Promote from Waitlist": {
+      "main": [
+        [
+          {
+            "node": "Email: Seat Opened",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Cairo"
+  }
+}
